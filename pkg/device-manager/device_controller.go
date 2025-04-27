@@ -50,6 +50,7 @@ func (c *DeviceController) Run(stop chan struct{}, done chan<- struct{}) error {
 		c.startedPluginsMutex.Lock()
 		defer c.startedPluginsMutex.Unlock()
 		for _, dev := range devicePlugins {
+			logger.Infof("Starting device plugin for %s", dev.GetDeviceName())
 			c.startDevice(dev.GetDeviceName(), dev)
 		}
 	}()
@@ -72,8 +73,8 @@ func (c *DeviceController) Run(stop chan struct{}, done chan<- struct{}) error {
 
 func (c *DeviceController) buildDevicePlugins(pciDeviceMap map[string][]*PCIDevice) []Device {
 	var devices []Device
-	for pciResourceName, pciDevices := range c.discoverConfiguredVfioDevices() {
-		log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(pciDevices), pciResourceName)
+	for pciResourceName, pciDevices := range pciDeviceMap {
+		log.DefaultLogger().Infof("Discovered PCIs %d devices on the node for the resource: %s", len(pciDevices), pciResourceName)
 		devices = append(devices, NewPCIDevicePlugin(pciDevices, pciResourceName))
 	}
 	return devices
@@ -81,16 +82,26 @@ func (c *DeviceController) buildDevicePlugins(pciDeviceMap map[string][]*PCIDevi
 
 // discoverConfiguredVfioDevices returns a map of resourceName to a slice of PCIDevice
 func (c *DeviceController) discoverConfiguredVfioDevices() map[string][]*PCIDevice {
+	initHandler()
+
+	logger := log.DefaultLogger()
 	configuredDeviceMap := c.buildConfiguredDeviceMap()
+
 	pciDeviceMap := make(map[string][]*PCIDevice)
 	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			logger.Reason(err).Errorf("failed to walk path: %s", path)
+		}
+
 		if info.IsDir() {
 			return nil
 		}
+
 		pciAddress := info.Name()
+
 		pciID, err := Handler.GetDevicePCIID(pciBasePath, pciAddress)
 		if err != nil {
-			log.DefaultLogger().Reason(err).Errorf("failed get vendor:device ID for device: %s", pciAddress)
+			logger.Reason(err).Errorf("failed get vendor:device ID for device: %s", pciAddress)
 			return nil
 		}
 
@@ -113,11 +124,12 @@ func (c *DeviceController) discoverConfiguredVfioDevices() map[string][]*PCIDevi
 			pcidev.driver = driver
 			pcidev.numaNode = Handler.GetDeviceNumaNode(pciBasePath, pciAddress)
 			pciDeviceMap[resourceName] = append(pciDeviceMap[resourceName], pcidev)
+			logger.Infof("Discovered device %s with resource name %s", pciAddress, resourceName)
 		}
 		return nil
 	})
 	if err != nil {
-		log.DefaultLogger().Reason(err).Errorf("failed to discover vfio devices")
+		logger.Reason(err).Errorf("failed to discover vfio devices")
 	}
 	return pciDeviceMap
 }

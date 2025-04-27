@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 const (
 	ConfigFilePath = "/etc/vfio/config.yaml"
+	// ConfigFilePath = "/root/config.yaml"
 )
 
 type ResourceConfig struct {
@@ -30,12 +32,16 @@ type Resource struct {
 }
 
 func NewResourceConfig() (*ResourceConfig, error) {
+	logger := log.DefaultLogger()
 	config, err := readConfig(ConfigFilePath)
 
 	if err != nil {
-		log.DefaultLogger().Reason(err).Error("Error reading config file")
+		logger.Reason(err).Error("Error reading config file")
 		return nil, err
 	}
+
+	logger.Infof("Config file loaded successfully: %s", ConfigFilePath)
+	logger.Infof("Resources: %v", config.Resources)
 
 	resourceConfig := &ResourceConfig{
 		config: config,
@@ -87,6 +93,10 @@ func parseDeviceAddress(device string) []string {
 	deviceAddress := parts[0] // The base device address (e.g., "0000:86:00.0")
 	rangePart := parts[1]     // The range part (e.g., "0-1,3,4")
 
+	// Remove the trailing 0 (keep the dot)
+	re := regexp.MustCompile(`0$`)
+	baseAddress := re.ReplaceAllString(deviceAddress, "") // e.g., "0000:86:00."
+
 	// Split the range part into individual ranges (e.g., "0-1", "3", "4")
 	ranges := strings.Split(rangePart, ",")
 	var addresses []string
@@ -106,11 +116,11 @@ func parseDeviceAddress(device string) []string {
 			}
 			// Add all addresses in the range from start to end
 			for i := start; i <= end; i++ {
-				addresses = append(addresses, fmt.Sprintf("%s%d", deviceAddress, i))
+				addresses = append(addresses, fmt.Sprintf("%s%d", baseAddress, i))
 			}
 		} else {
 			// If it's a single address (e.g., "3"), just add it directly
-			addresses = append(addresses, fmt.Sprintf("%s%s", deviceAddress, r))
+			addresses = append(addresses, fmt.Sprintf("%s%s", baseAddress, r))
 		}
 	}
 
