@@ -1,0 +1,130 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+  name: vfio-device-plugin
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vfio-device-plugin
+  namespace: vfio-device-plugin
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - security.openshift.io
+    resourceNames:
+      - privileged
+    resources:
+      - securitycontextconstraints
+    verbs:
+      - use
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vfio-device-plugin
+  namespace: vfio-device-plugin
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vfio-device-plugin
+  namespace: vfio-device-plugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vfio-device-plugin
+subjects:
+  - kind: ServiceAccount
+    name: vfio-device-plugin
+    namespace: vfio-device-plugin
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vfio-device-plugin
+  namespace: vfio-device-plugin
+spec:
+  selector:
+    matchLabels:
+      name: vfio-device-plugin
+  template:
+    metadata:
+      labels:
+        name: vfio-device-plugin
+    spec:
+      nodeSelector:
+          vfio-device: "true"
+      hostNetwork: true
+      priorityClassName: "system-node-critical"
+      containers:
+      - name: vfio-device-plugin
+        image: quay.io/jonkey/vfio-device-plugin:0.6
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+          - name: device-plugins
+            mountPath: /var/lib/kubelet/device-plugins
+          - name: dev
+            mountPath: /dev
+          - name: sys
+            mountPath: /sys
+          - name: config
+            mountPath: /etc/vfio
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "10Mi"
+          limits:
+            cpu: "100m"
+            memory: "20Mi"
+      serviceAccountName: vfio-device-plugin
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: config
+          configMap:
+            name: vfio-devices
+      seccompProfile:
+        type: RuntimeDefault
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vfio-devices
+  namespace: vfio-device-plugin
+data:
+  config.yaml: |
+    resources:
+      - resourceName: ib_group1
+        addresses:
+          - "0000:86:00.0#0-1,3,4"
+          - "0000:86:02.0#0-1,3,4"
+      - resourceName: ib_group2
+        addresses:
+          - "0000:88:00.0#0-1,3,4"
+          - "0000:88:02.0#0-1,3,4"
