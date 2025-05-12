@@ -73,7 +73,7 @@ spec:
       priorityClassName: "system-node-critical"
       containers:
       - name: vfio-device-plugin
-        image: quay.io/jonkey/vfio-device-plugin:0.6
+        image: quay.io/jonkey/vfio-device-plugin:0.1
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

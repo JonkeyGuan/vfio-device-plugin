@@ -14,4 +14,4 @@ dep:
 	go mod download
 
 image: clean build
-	docker build --platform=linux/amd64 -t pic-device-plugin .
+	docker build --platform=linux/amd64 -t quay.io/jonkey/vfio-device-plugin:0.1 .
