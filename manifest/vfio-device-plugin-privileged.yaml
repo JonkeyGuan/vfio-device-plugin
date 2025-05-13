@@ -13,22 +13,13 @@ metadata:
   name: vfio-device-plugin
   namespace: vfio-device-plugin
 rules:
-  - apiGroups:
-      - ""
-    resources:
-      - nodes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - security.openshift.io
-    resourceNames:
-      - privileged
-    resources:
-      - securitycontextconstraints
-    verbs:
-      - use
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["security.openshift.io"]
+    resourceNames: ["privileged"]
+    resources: ["securitycontextconstraints"]
+    verbs: ["use"]
 
 ---
 apiVersion: v1
@@ -43,14 +34,14 @@ kind: RoleBinding
 metadata:
   name: vfio-device-plugin
   namespace: vfio-device-plugin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: vfio-device-plugin
 subjects:
   - kind: ServiceAccount
     name: vfio-device-plugin
     namespace: vfio-device-plugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vfio-device-plugin
 
 ---
 apiVersion: apps/v1
@@ -67,34 +58,34 @@ spec:
       labels:
         name: vfio-device-plugin
     spec:
-      nodeSelector:
-          vfio-device: "true"
-      hostNetwork: true
-      priorityClassName: "system-node-critical"
-      containers:
-      - name: vfio-device-plugin
-        image: quay.io/jonkey/vfio-device-plugin:0.1
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
-        volumeMounts:
-          - name: device-plugins
-            mountPath: /var/lib/kubelet/device-plugins
-          - name: dev
-            mountPath: /dev
-          - name: sys
-            mountPath: /sys
-          - name: config
-            mountPath: /etc/vfio
-        resources:
-          requests:
-            cpu: "50m"
-            memory: "10Mi"
-          limits:
-            cpu: "100m"
-            memory: "20Mi"
       serviceAccountName: vfio-device-plugin
+      nodeSelector:
+        vfio-device: "true"
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      containers:
+        - name: vfio-device-plugin
+          image: quay.io/jonkey/vfio-device-plugin:0.1
+          securityContext:
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true
+            privileged: true
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: config
+              mountPath: /etc/vfio
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
       volumes:
         - name: device-plugins
           hostPath:
@@ -108,8 +99,6 @@ spec:
         - name: config
           configMap:
             name: vfio-devices
-      seccompProfile:
-        type: RuntimeDefault
 
 ---
 apiVersion: v1
@@ -120,6 +109,9 @@ metadata:
 data:
   config.yaml: |
     resources:
-      - resourceName: demo.com/ib-group1 
+      - resourceName: ib.net/ib1
         addresses:
-          - "0000:4d:00.0#1-4
+          - "0000:cc:00.0#0-7"
+      - resourceName: ib.net/ib2
+        addresses:
+          - "0000:dc:00.0#0-7"
