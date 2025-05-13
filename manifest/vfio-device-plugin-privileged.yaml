@@ -111,7 +111,7 @@ data:
     resources:
       - resourceName: ib.net/ib1
         addresses:
-          - "0000:cc:00.0#0-7"
+          - "0000:cc:00.0#1-7"g
       - resourceName: ib.net/ib2
         addresses:
-          - "0000:dc:00.0#0-7"
+          - "0000:dc:00.0#1-7"
