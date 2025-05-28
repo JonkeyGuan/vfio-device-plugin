@@ -91,12 +91,17 @@ func parseDeviceAddress(device string) []string {
 	// Split the device address into base device address and the range part (e.g., 0000:86:00.0 and 0-1,3,4)
 	parts := strings.Split(device, "#")
 	deviceAddress := parts[0] // The base device address (e.g., "0000:86:00.0")
-	rangePart := parts[1]     // The range part (e.g., "0-1,3,4")
 
 	// Remove the trailing 0 (keep the dot)
 	re := regexp.MustCompile(`0$`)
 	baseAddress := re.ReplaceAllString(deviceAddress, "") // e.g., "0000:86:00."
 
+	// If there is no range part or it's empty, just return the base address
+	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+		return []string{baseAddress}
+	}
+
+	rangePart := parts[1] // The range part (e.g., "0-1,3,4")
 	// Split the range part into individual ranges (e.g., "0-1", "3", "4")
 	ranges := strings.Split(rangePart, ",")
 	var addresses []string
