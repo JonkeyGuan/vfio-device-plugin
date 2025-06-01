@@ -65,7 +65,7 @@ spec:
       priorityClassName: system-node-critical
       containers:
         - name: vfio-device-plugin
-          image: quay.io/jonkey/vfio-device-plugin:0.1.2
+          image: quay.io/jonkey/vfio-device-plugin:0.1.3
           securityContext:
             runAsNonRoot: false
             allowPrivilegeEscalation: true
@@ -112,8 +112,10 @@ data:
       - resourceName: ib.net/ib1
         addresses:
           - "0000:cc:00.0#1-7"
-          - "0000:cc:01.0"
+          - "0000:cc:01.0#0-7"
+          - "0000:cc:02.0"
       - resourceName: ib.net/ib2
         addresses:
           - "0000:dc:00.0#1-7"
-          - "0000:dc:01.0"
+          - "0000:dc:01.0#0-7"
+          - "0000:dc:02.0"

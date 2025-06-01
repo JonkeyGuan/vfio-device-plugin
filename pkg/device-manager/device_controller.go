@@ -1,8 +1,7 @@
 package device_manager
 
 import (
-	"os"
-	"path/filepath"
+	"fmt"
 	"sync"
 	"time"
 
@@ -42,7 +41,27 @@ func (c *DeviceController) Run(stop chan struct{}, done chan<- struct{}) error {
 
 	defer close(done)
 
-	discoverConfiguredVfioDevices := c.discoverConfiguredVfioDevices()
+	var (
+		discoverConfiguredVfioDevices map[string][]*PCIDevice
+		discoverErr                   error
+		retryInterval                 = 30 * time.Second
+	)
+
+	for {
+		discoverConfiguredVfioDevices, discoverErr = c.discoverConfiguredVfioDevices()
+		if discoverErr != nil {
+			logger.Reason(discoverErr).Errorf("failed to discover configured VFIO devices, will retry in %s", retryInterval)
+			select {
+			case <-stop:
+				logger.Info("Received stop signal before successful discovery")
+				return fmt.Errorf("device discovery interrupted")
+			case <-time.After(retryInterval):
+				continue
+			}
+		}
+		break
+	}
+
 	devicePlugins := c.buildDevicePlugins(discoverConfiguredVfioDevices)
 
 	// start all device plugins
@@ -81,57 +100,61 @@ func (c *DeviceController) buildDevicePlugins(pciDeviceMap map[string][]*PCIDevi
 }
 
 // discoverConfiguredVfioDevices returns a map of resourceName to a slice of PCIDevice
-func (c *DeviceController) discoverConfiguredVfioDevices() map[string][]*PCIDevice {
+// and an error if any device fails during discovery (error details are logged)
+func (c *DeviceController) discoverConfiguredVfioDevices() (map[string][]*PCIDevice, error) {
 	initHandler()
 
 	logger := log.DefaultLogger()
 	configuredDeviceMap := c.buildConfiguredDeviceMap()
 
 	pciDeviceMap := make(map[string][]*PCIDevice)
-	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			logger.Reason(err).Errorf("failed to walk path: %s", path)
-		}
+	var hadErrors bool
 
-		if info.IsDir() {
-			return nil
-		}
-
-		pciAddress := info.Name()
-
+	for pciAddress, resourceName := range configuredDeviceMap {
 		pciID, err := Handler.GetDevicePCIID(pciBasePath, pciAddress)
 		if err != nil {
-			logger.Reason(err).Errorf("failed get vendor:device ID for device: %s", pciAddress)
-			return nil
+			logger.Reason(err).Errorf("failed to get vendor:device ID for device: %s", pciAddress)
+			hadErrors = true
+			continue
 		}
 
-		if resourceName, supported := configuredDeviceMap[pciAddress]; supported {
-			// check device driver
-			driver, err := Handler.GetDeviceDriver(pciBasePath, pciAddress)
-			if err != nil || driver != "vfio-pci" {
-				return nil
-			}
-
-			pcidev := &PCIDevice{
-				pciID:      pciID,
-				pciAddress: pciAddress,
-			}
-			iommuGroup, err := Handler.GetDeviceIOMMUGroup(pciBasePath, pciAddress)
-			if err != nil {
-				return nil
-			}
-			pcidev.iommuGroup = iommuGroup
-			pcidev.driver = driver
-			pcidev.numaNode = Handler.GetDeviceNumaNode(pciBasePath, pciAddress)
-			pciDeviceMap[resourceName] = append(pciDeviceMap[resourceName], pcidev)
-			logger.Infof("Discovered device %s with resource name %s", pciAddress, resourceName)
+		driver, err := Handler.GetDeviceDriver(pciBasePath, pciAddress)
+		if err != nil {
+			logger.Reason(err).Errorf("failed to get driver for device: %s", pciAddress)
+			hadErrors = true
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		logger.Reason(err).Errorf("failed to discover vfio devices")
+		if driver != "vfio-pci" {
+			logger.Errorf("device %s is not bound to vfio-pci (actual driver: %s)", pciAddress, driver)
+			hadErrors = true
+			continue
+		}
+
+		iommuGroup, err := Handler.GetDeviceIOMMUGroup(pciBasePath, pciAddress)
+		if err != nil {
+			logger.Reason(err).Errorf("failed to get IOMMU group for device: %s", pciAddress)
+			hadErrors = true
+			continue
+		}
+
+		numaNode := Handler.GetDeviceNumaNode(pciBasePath, pciAddress)
+
+		pcidev := &PCIDevice{
+			pciID:      pciID,
+			pciAddress: pciAddress,
+			iommuGroup: iommuGroup,
+			driver:     driver,
+			numaNode:   numaNode,
+		}
+
+		pciDeviceMap[resourceName] = append(pciDeviceMap[resourceName], pcidev)
+		logger.Infof("Discovered configured device %s with resource name %s", pciAddress, resourceName)
 	}
-	return pciDeviceMap
+
+	if hadErrors {
+		return pciDeviceMap, fmt.Errorf("some devices failed during discovery, check logs for details")
+	}
+	return pciDeviceMap, nil
 }
 
 func (c *DeviceController) buildConfiguredDeviceMap() map[string]string {
